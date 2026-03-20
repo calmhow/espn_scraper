@@ -16,11 +16,11 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 import uvicorn
 
+
 # -----------------------------
 # Config
 # -----------------------------
 BRACKET_URL = "https://www.espn.com/perfect-bracket/"
-# Unofficial ESPN scoreboard JSON used by many public examples.
 SCOREBOARD_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/"
     "mens-college-basketball/scoreboard?groups=100&seasontype=3"
@@ -40,9 +40,7 @@ PATTERNS = [
 latest_value: Optional[int] = None
 latest_timestamp: Optional[str] = None
 
-# game_id -> metadata for games already written to GAME_CSV_FILE
 recorded_games: dict[str, dict] = {}
-# game_id -> pending final metadata waiting for bracket count to settle
 pending_finals: dict[str, dict] = {}
 
 
@@ -74,7 +72,7 @@ def ensure_game_csv() -> None:
             writer.writerow([
                 "game_number",
                 "date",
-                "update_time_et",
+                "update_time_utc",
                 "matchup",
                 "winner",
                 "score",
@@ -112,7 +110,7 @@ def next_game_number() -> int:
 
 def append_game_csv(
     date_str: str,
-    update_time_et: str,
+    update_time_utc: str,
     matchup: str,
     winner: str,
     score: str,
@@ -125,7 +123,7 @@ def append_game_csv(
         writer.writerow([
             game_number,
             date_str,
-            update_time_et,
+            update_time_utc,
             matchup,
             winner,
             score,
@@ -190,7 +188,6 @@ def parse_event(event: dict) -> Optional[dict]:
     if len(competitors) != 2:
         return None
 
-    # Sort so home/away ordering does not matter for storage
     competitors_sorted = sorted(competitors, key=lambda c: c.get("homeAway", ""))
 
     team1 = competitors_sorted[0].get("team", {}).get("displayName", "Team 1")
@@ -210,11 +207,9 @@ def parse_event(event: dict) -> Optional[dict]:
     status_desc = type_info.get("description", "")
     completed = bool(type_info.get("completed", False))
 
-    # ESPN often uses STATUS_FINAL or completed=True
     is_final = completed or "final" in status_name.lower() or "final" in status_desc.lower()
 
     date_raw = event.get("date", "")
-    # Keep UTC date string simple in file; if you want exact ET conversion later, I can add it.
     date_str = date_raw[:10] if date_raw else ""
 
     matchup = f"{team1} vs. {team2}"
@@ -255,14 +250,12 @@ async def scoreboard_loop() -> None:
 
                 for event in events:
                     key = f"{event['date']}|{event['matchup']}"
-
                     if event["is_final"] and key not in recorded_games and key not in pending_finals:
                         pending_finals[key] = {
                             **event,
                             "detected_at": now,
                         }
 
-                # Promote pending finals to recorded rows after delay and when a bracket count exists
                 to_record = []
                 for key, event in pending_finals.items():
                     elapsed = (now - event["detected_at"]).total_seconds()
@@ -272,7 +265,7 @@ async def scoreboard_loop() -> None:
                 for key, event in sorted(to_record, key=lambda x: (x[1]["date"], x[1]["matchup"])):
                     append_game_csv(
                         date_str=event["date"],
-                        update_time_et=utc_now_iso(),
+                        update_time_utc=utc_now_iso(),
                         matchup=event["matchup"],
                         winner=event["winner"],
                         score=event["score"],
@@ -332,6 +325,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(scoreboard_loop())
     yield
 
+
 app = FastAPI(lifespan=lifespan)
 
 
@@ -347,6 +341,32 @@ async def api_current():
     )
 
 
+@app.get("/api/history")
+async def api_history():
+    ensure_game_csv()
+
+    rows = []
+    with GAME_CSV_FILE.open("r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                rows.append({
+                    "game_number": int(row["game_number"]),
+                    "date": row["date"],
+                    "matchup": row["matchup"],
+                    "winner": row["winner"],
+                    "score": row["score"],
+                    "perfect_brackets_remaining": int(row["perfect_brackets_remaining"]),
+                    "update_time_utc": row["update_time_utc"],
+                })
+            except Exception as e:
+                print("Skipping row in /api/history:", row, e)
+                continue
+
+    rows.sort(key=lambda r: r["game_number"])
+    return rows
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return """
@@ -355,20 +375,89 @@ async def index():
 <head>
   <meta charset="utf-8">
   <title>ESPN Perfect Brackets Live</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 40px; }
     .value { font-size: 56px; font-weight: bold; margin: 20px 0; }
     .meta { color: #555; margin-bottom: 10px; }
+    .section { margin-top: 40px; }
+    .chart-wrap { width: 100%; max-width: 1100px; height: 500px; }
+    table { border-collapse: collapse; margin-top: 20px; width: 100%; max-width: 1100px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 14px; }
+    th { background: #f5f5f5; }
   </style>
 </head>
 <body>
   <h1>ESPN Perfect Brackets Live</h1>
+
   <div class="value" id="value">Loading...</div>
   <div class="meta" id="meta"></div>
-  <div class="meta">Game rows are being written to <code>espn_perfect_brackets_by_game.csv</code></div>
+  <div class="meta">Live count file: <code>espn_perfect_brackets_log.csv</code></div>
+  <div class="meta">Per-game file: <code>espn_perfect_brackets_by_game.csv</code></div>
+
+  <div class="section">
+    <h2>Perfect Brackets Remaining vs. Game Number</h2>
+    <div class="chart-wrap">
+      <canvas id="historyChart"></canvas>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Logged Game Results</h2>
+    <table id="historyTable">
+      <thead>
+        <tr>
+          <th>Game #</th>
+          <th>Date</th>
+          <th>Matchup</th>
+          <th>Winner</th>
+          <th>Score</th>
+          <th>Perfect Brackets Remaining</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
   <script>
-    async function refresh() {
+    let chart = null;
+
+    function fitExponential(rows) {
+      const valid = rows.filter(r => Number(r.perfect_brackets_remaining) > 0);
+
+      if (valid.length < 2) {
+        return [];
+      }
+
+      const xs = valid.map(r => Number(r.game_number));
+      const ys = valid.map(r => Number(r.perfect_brackets_remaining));
+      const lnys = ys.map(y => Math.log(y));
+
+      const n = xs.length;
+      const sumX = xs.reduce((a, b) => a + b, 0);
+      const sumY = lnys.reduce((a, b) => a + b, 0);
+      const sumXX = xs.reduce((a, b) => a + b * b, 0);
+      const sumXY = xs.reduce((acc, x, i) => acc + x * lnys[i], 0);
+
+      const denom = n * sumXX - sumX * sumX;
+      if (denom === 0) {
+        return [];
+      }
+
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const intercept = (sumY - slope * sumX) / n;
+
+      const A = Math.exp(intercept);
+      const k = -slope;
+
+      return rows.map(r => {
+        const x = Number(r.game_number);
+        const y = A * Math.exp(-k * x);
+        return y > 0 ? y : null;
+      });
+    }
+
+    async function refreshCurrent() {
       const res = await fetch('/api/current');
       const data = await res.json();
 
@@ -383,8 +472,126 @@ async def index():
           : 'Waiting for first successful scrape...';
     }
 
-    refresh();
-    setInterval(refresh, 5000);
+    async function refreshHistory() {
+      const res = await fetch('/api/history');
+      const rows = await res.json();
+
+      const labels = rows.map(r => r.game_number);
+      const values = rows.map(r => {
+        const v = Number(r.perfect_brackets_remaining);
+        return v > 0 ? v : null;
+      });
+      const expFit = fitExponential(rows);
+
+      const ctx = document.getElementById('historyChart').getContext('2d');
+
+      if (chart) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = values;
+        chart.data.datasets[1].data = expFit;
+        chart.update();
+      } else {
+        chart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'Perfect Brackets Remaining',
+                data: values,
+                tension: 0.15,
+                fill: false,
+                borderColor: 'blue',
+                backgroundColor: 'blue',
+                pointRadius: 4
+              },
+              {
+                label: 'Exponential Decay Fit',
+                data: expFit,
+                tension: 0.15,
+                fill: false,
+                borderColor: 'red',
+                backgroundColor: 'red',
+                borderDash: [8, 6],
+                pointRadius: 0,
+                borderWidth: 3
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                title: {
+                  display: true,
+                  text: 'Game Number'
+                }
+              },
+              y: {
+                title: {
+                  display: true,
+                  text: 'Perfect Brackets Remaining'
+                },
+                ticks: {
+                  callback: function(value) {
+                    return Number(value).toLocaleString();
+                  }
+                }
+              }
+            },
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    if (context.parsed.y == null) {
+                      return ' Unavailable';
+                    }
+                    return ' ' + Number(context.parsed.y).toLocaleString(undefined, {
+                      maximumFractionDigits: 0
+                    });
+                  },
+                  title: function(context) {
+                    const idx = context[0].dataIndex;
+                    const row = rows[idx];
+                    return `Game ${row.game_number}: ${row.matchup}`;
+                  },
+                  afterTitle: function(context) {
+                    const idx = context[0].dataIndex;
+                    const row = rows[idx];
+                    return `Winner: ${row.winner} | Score: ${row.score}`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      const tbody = document.querySelector('#historyTable tbody');
+      tbody.innerHTML = '';
+
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.game_number}</td>
+          <td>${row.date}</td>
+          <td>${row.matchup}</td>
+          <td>${row.winner}</td>
+          <td>${row.score}</td>
+          <td>${Number(row.perfect_brackets_remaining).toLocaleString()}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function refreshAll() {
+      await refreshCurrent();
+      await refreshHistory();
+    }
+
+    refreshAll();
+    setInterval(refreshAll, 5000);
   </script>
 </body>
 </html>

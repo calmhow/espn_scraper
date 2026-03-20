@@ -1,8 +1,18 @@
-game_number,date,update_time_et,matchup,winner,score,perfect_brackets_remaining,scope,source
-0,2026-03-19,2026-03-19T21:12:24Z,BEFORE,NA,NA,26200000,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+game_number,date,update_time_utc,matchup,winner,score,perfect_brackets_remaining,scope,source
+0,2026-03-19,2026-03-19T21:12:24Z,BEFORE,NA,NA,26543555,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
 1,2026-03-19,2026-03-19T21:12:24Z,TCU Horned Frogs vs. Ohio State Buckeyes,TCU Horned Frogs,66-64,14500000,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
 2,2026-03-19,2026-03-19T21:12:24Z,Troy Trojans vs. Nebraska Cornhuskers,Nebraska Cornhuskers,47-76,2400000,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
 3,2026-03-19,2026-03-19T21:12:55Z,High Point Panthers vs. Wisconsin Badgers,High Point Panthers,83-82,889000,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
 4,2026-03-19,2026-03-19T21:12:55Z,Siena Saints vs. Duke Blue Devils,Duke Blue Devils,65-71,869226,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
 5,2026-03-19,2026-03-19T21:12:55Z,South Florida Bulls vs. Louisville Cardinals,Louisville Cardinals,79-83,849226,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
 7,2026-03-19,2026-03-19T21:26:31Z,McNeese Cowboys vs. Vanderbilt Commodores,Vanderbilt Commodores,68-78,634726,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+8,2026-03-19,2026-03-19T22:30:48Z,Hawai'i Rainbow Warriors vs. Arkansas Razorbacks,Arkansas Razorbacks,78-97,634726,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+9,2026-03-19,2026-03-19T22:33:49Z,North Dakota State Bison vs. Michigan State Spartans,Michigan State Spartans,67-92,576882,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+10,2026-03-19,2026-03-20T01:23:26Z,VCU Rams vs. North Carolina Tar Heels,VCU Rams,82-78,227358,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+11,2026-03-19,2026-03-20T01:39:34Z,Howard Bison vs. Michigan Wolverines,Michigan Wolverines,80-101,224378,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+12,2026-03-19,2026-03-20T01:44:06Z,Texas A&M Aggies vs. Saint Mary's Gaels,Texas A&M Aggies,63-50,83184,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+13,2026-03-19,2026-03-20T01:53:40Z,Texas Longhorns vs. BYU Cougars,Texas Longhorns,79-71,24291,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+14,2026-03-20,2026-03-20T03:49:00Z,Pennsylvania Quakers vs. Illinois Fighting Illini,Illinois Fighting Illini,70-105,22734,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+15,2026-03-20,2026-03-20T04:15:12Z,Idaho Vandals vs. Houston Cougars,Houston Cougars,45-78,22181,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+16,2026-03-20,2026-03-20T04:16:12Z,Saint Louis Billikens vs. Georgia Bulldogs,Saint Louis Billikens,102-77,11207,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
+17,2026-03-20,2026-03-20T04:38:54Z,Kennesaw State Owls vs. Gonzaga Bulldogs,Gonzaga Bulldogs,64-73,10754,ESPN Tournament Challenge perfect-bracket tracker,ESPN perfect-bracket tracker + ESPN scoreboard
