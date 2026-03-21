@@ -425,9 +425,12 @@ async def index():
     .meta { color: #555; margin-bottom: 10px; }
     .section { margin-top: 40px; }
     .chart-wrap { width: 100%; max-width: 1100px; height: 500px; }
-    table { border-collapse: collapse; margin-top: 20px; width: 100%; max-width: 1100px; }
+    table { border-collapse: collapse; margin-top: 20px; width: 100%; max-width: 1300px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 14px; }
     th { background: #f5f5f5; }
+    .controls { margin: 16px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    label { font-weight: bold; }
+    select { padding: 4px 8px; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -440,6 +443,13 @@ async def index():
 
   <div class="section">
     <h2>Perfect Brackets Remaining vs. Game Number</h2>
+
+    <div class="controls">
+      <label for="startGameSelect">Start decay fit at game:</label>
+      <select id="startGameSelect"></select>
+      <span id="fitInfo"></span>
+    </div>
+
     <div class="chart-wrap">
       <canvas id="historyChart"></canvas>
     </div>
@@ -467,6 +477,8 @@ async def index():
 
   <script>
     let chart = null;
+    let allRows = [];
+    let dropdownInitialized = false;
 
     function fitExponential(rows) {
       const valid = rows.filter(r => Number(r.perfect_brackets_remaining) > 0);
@@ -496,11 +508,42 @@ async def index():
       const A = Math.exp(intercept);
       const k = -slope;
 
-      return rows.map(r => {
+      return valid.map(r => {
         const x = Number(r.game_number);
         const y = A * Math.exp(-k * x);
-        return y > 0 ? y : null;
+        return {
+          game_number: x,
+          fitted_value: y > 0 ? y : null,
+          A: A,
+          k: k
+        };
       });
+    }
+
+    function populateStartGameDropdown(rows) {
+      const select = document.getElementById('startGameSelect');
+      const gameNumbers = rows
+        .map(r => Number(r.game_number))
+        .filter(n => !Number.isNaN(n))
+        .sort((a, b) => a - b);
+
+      select.innerHTML = '';
+
+      for (const n of gameNumbers) {
+        const option = document.createElement('option');
+        option.value = n;
+        option.textContent = n;
+        if (n === 3) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+      }
+
+      if (!gameNumbers.includes(3) && gameNumbers.length > 0) {
+        select.value = String(gameNumbers[0]);
+      }
+
+      dropdownInitialized = true;
     }
 
     async function refreshCurrent() {
@@ -518,96 +561,147 @@ async def index():
           : 'Waiting for first successful scrape...';
     }
 
-    async function refreshHistory() {
-  const res = await fetch('/api/history');
-  const rows = await res.json();
+    function renderChartAndTable() {
+      const select = document.getElementById('startGameSelect');
+      const startGame = Number(select.value);
 
-  const chartRows = rows.slice(2);
+      const chartRows = allRows.filter(r => Number(r.game_number) >= startGame);
 
-  const labels = chartRows.map(r => r.game_number);
-  const values = chartRows.map(r => {
-    const v = Number(r.perfect_brackets_remaining);
-    return v > 0 ? v : null;
-  });
-  const expFit = fitExponential(chartRows);
+      const labels = chartRows.map(r => r.game_number);
+      const values = chartRows.map(r => {
+        const v = Number(r.perfect_brackets_remaining);
+        return v > 0 ? v : null;
+      });
 
-  const ctx = document.getElementById('historyChart').getContext('2d');
+      const fitPoints = fitExponential(chartRows);
+      const fitMap = new Map(fitPoints.map(p => [p.game_number, p.fitted_value]));
+      const expFit = labels.map(g => fitMap.get(g) ?? null);
 
-  if (chart) {
-    chart.data.labels = labels;
-    chart.data.datasets[0].data = values;
-    chart.data.datasets[1].data = expFit;
-    chart.update();
-  } else {
-    chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: 'Perfect Brackets Remaining',
-            data: values,
-            tension: 0.15,
-            fill: false,
-            borderColor: 'blue',
-            backgroundColor: 'blue',
-            pointRadius: 4
+      const ctx = document.getElementById('historyChart').getContext('2d');
+
+      if (chart) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = values;
+        chart.data.datasets[1].data = expFit;
+        chart.update();
+      } else {
+        chart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'Perfect Brackets Remaining',
+                data: values,
+                tension: 0.15,
+                fill: false,
+                borderColor: 'blue',
+                backgroundColor: 'blue',
+                pointRadius: 4
+              },
+              {
+                label: 'Exponential Decay Fit',
+                data: expFit,
+                tension: 0.15,
+                fill: false,
+                borderColor: 'red',
+                backgroundColor: 'red',
+                borderDash: [8, 6],
+                pointRadius: 0,
+                borderWidth: 3
+              }
+            ]
           },
-          {
-            label: 'Exponential Decay Fit',
-            data: expFit,
-            tension: 0.15,
-            fill: false,
-            borderColor: 'red',
-            backgroundColor: 'red',
-            borderDash: [8, 6],
-            pointRadius: 0,
-            borderWidth: 3
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            title: {
-              display: true,
-              text: 'Game Number'
-            }
-          },
-          y: {
-            title: {
-              display: true,
-              text: 'Perfect Brackets Remaining'
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                title: {
+                  display: true,
+                  text: 'Game Number'
+                }
+              },
+              y: {
+                title: {
+                  display: true,
+                  text: 'Perfect Brackets Remaining'
+                },
+                ticks: {
+                  callback: function(value) {
+                    return Number(value).toLocaleString();
+                  }
+                }
+              }
             },
-            ticks: {
-              callback: function(value) {
-                return Number(value).toLocaleString();
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    if (context.parsed.y == null) {
+                      return ' Unavailable';
+                    }
+                    return ' ' + Number(context.parsed.y).toLocaleString(undefined, {
+                      maximumFractionDigits: 0
+                    });
+                  },
+                  title: function(context) {
+                    const idx = context[0].dataIndex;
+                    const row = chartRows[idx];
+                    return `Game ${row.game_number}: ${row.matchup}`;
+                  },
+                  afterTitle: function(context) {
+                    const idx = context[0].dataIndex;
+                    const row = chartRows[idx];
+                    return `Winner: ${row.winner} | Score: ${row.score}`;
+                  }
+                }
               }
             }
           }
-        }
+        });
       }
-    });
-  }
 
-  const tbody = document.querySelector('#historyTable tbody');
-  tbody.innerHTML = '';
+      const fitInfo = document.getElementById('fitInfo');
+      if (fitPoints.length >= 2) {
+        const A = fitPoints[0].A;
+        const k = fitPoints[0].k;
+        fitInfo.textContent = `Fit uses games ${startGame}+   Model: y = ${A.toFixed(2)} · e^(-${k.toFixed(4)}x)`;
+      } else {
+        fitInfo.textContent = 'Not enough points to compute fit.';
+      }
 
-  for (const row of rows) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${row.game_number}</td>
-      <td>${row.date}</td>
-      <td>${row.matchup}</td>
-      <td>${row.winner}</td>
-      <td>${row.score}</td>
-      <td>${Number(row.perfect_brackets_remaining).toLocaleString()}</td>
-    `;
-    tbody.appendChild(tr);
-  }
-}
+      const tbody = document.querySelector('#historyTable tbody');
+      tbody.innerHTML = '';
+
+      for (const row of allRows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.game_number}</td>
+          <td>${row.date}</td>
+          <td>${row.matchup}</td>
+          <td>${row.winner}</td>
+          <td>${row.score}</td>
+          <td>${row.perfect_brackets_before == null ? '—' : Number(row.perfect_brackets_before).toLocaleString()}</td>
+          <td>${Number(row.perfect_brackets_remaining).toLocaleString()}</td>
+          <td>${row.raw_loss == null ? '—' : Number(row.raw_loss).toLocaleString()}</td>
+          <td>${row.impact_percent == null ? '—' : row.impact_percent.toFixed(2) + '%'}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function refreshHistory() {
+      const res = await fetch('/api/history');
+      allRows = await res.json();
+
+      if (!dropdownInitialized) {
+        populateStartGameDropdown(allRows);
+        document.getElementById('startGameSelect').addEventListener('change', renderChartAndTable);
+      }
+
+      renderChartAndTable();
+    }
 
     async function refreshAll() {
       await refreshCurrent();
