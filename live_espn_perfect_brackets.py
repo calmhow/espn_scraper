@@ -345,12 +345,12 @@ async def api_current():
 async def api_history():
     ensure_game_csv()
 
-    rows = []
+    raw_rows = []
     with GAME_CSV_FILE.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             try:
-                rows.append({
+                raw_rows.append({
                     "game_number": int(row["game_number"]),
                     "date": row["date"],
                     "matchup": row["matchup"],
@@ -363,8 +363,51 @@ async def api_history():
                 print("Skipping row in /api/history:", row, e)
                 continue
 
-    rows.sort(key=lambda r: r["game_number"])
+    raw_rows.sort(key=lambda r: r["game_number"])
+
+    rows = []
+    previous_remaining = None
+
+    for row in raw_rows:
+        after = row["perfect_brackets_remaining"]
+
+        if previous_remaining is None or previous_remaining <= 0:
+            before = None
+            raw_loss = None
+            survival_rate = None
+            impact_rate = None
+            impact_percent = None
+        else:
+            before = previous_remaining
+            raw_loss = before - after
+            survival_rate = after / before
+            impact_rate = 1 - survival_rate
+            impact_percent = impact_rate * 100
+
+        rows.append({
+            **row,
+            "perfect_brackets_before": before,
+            "raw_loss": raw_loss,
+            "survival_rate": survival_rate,
+            "impact_rate": impact_rate,
+            "impact_percent": impact_percent,
+        })
+
+        previous_remaining = after
+
     return rows
+
+@app.get("/api/impact")
+async def api_impact():
+    history = await api_history()
+
+    ranked = [
+        row for row in history
+        if row["impact_rate"] is not None
+    ]
+
+    ranked.sort(key=lambda r: r["impact_rate"], reverse=True)
+    return ranked
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -412,7 +455,10 @@ async def index():
           <th>Matchup</th>
           <th>Winner</th>
           <th>Score</th>
-          <th>Perfect Brackets Remaining</th>
+          <th>Before</th>
+          <th>After</th>
+          <th>Raw Loss</th>
+          <th>Impact %</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -579,7 +625,10 @@ async def index():
           <td>${row.matchup}</td>
           <td>${row.winner}</td>
           <td>${row.score}</td>
+          <td>${row.perfect_brackets_before == null ? '—' : Number(row.perfect_brackets_before).toLocaleString()}</td>
           <td>${Number(row.perfect_brackets_remaining).toLocaleString()}</td>
+          <td>${row.raw_loss == null ? '—' : Number(row.raw_loss).toLocaleString()}</td>
+          <td>${row.impact_percent == null ? '—' : row.impact_percent.toFixed(2) + '%'}</td>
         `;
         tbody.appendChild(tr);
       }
@@ -596,7 +645,6 @@ async def index():
 </body>
 </html>
 """
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
